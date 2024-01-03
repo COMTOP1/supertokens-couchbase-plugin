@@ -59,7 +59,7 @@ public class JWTSigningQueries {
          * keys in the future.
          */
         Scope signingScope = bucket.defaultScope();
-        QueryResult result1 = signingScope.query(String.format("SELECT * FROM %s;", Config.getConfig(start).getJWTSigningKeysCollection()));
+        QueryResult result1 = signingScope.query(String.format("SELECT * FROM `%s`;", Config.getConfig(start).getJWTSigningKeysCollection()));
 
         for (JsonObject row : result1.rowsAsObject()) {
             result.add(JWTSigningKeyInfoRowMapper.getInstance().mapOrThrow(row));
@@ -125,7 +125,7 @@ public class JWTSigningQueries {
         Scope signingScope = bucket.defaultScope();
         Collection signingCollection = signingScope.collection(Config.getConfig(start).getJWTSigningKeysCollection());
 
-        QueryResult result1 = signingScope.query(String.format("SELECT * FROM %s WHERE algorithm = %s AND META().id = %s;", Config.getConfig(start).getJWTSigningKeysCollection(), keyInfo.algorithm, String.format("jwt_%s", keyInfo.keyId)));
+        QueryResult result1 = signingScope.query(String.format("SELECT * FROM `%s` WHERE algorithm = '%s' AND META().id = '%s';", Config.getConfig(start).getJWTSigningKeysCollection(), keyInfo.algorithm, String.format("jwt_%s", keyInfo.keyId)));
         if (result1.rowsAsObject().isEmpty()) {
             MutationResult upsertResult;
             try {
