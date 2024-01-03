@@ -1,0 +1,32 @@
+couchbase_config_version: 0
+
+# (COMPULSORY) string value. This is the connection uri to connect to a couchbase instance or cluster as per https://docs.couchbase.com/java-sdk/current/howtos/managing-connections.html
+# couchbase_connection_uri:
+
+
+# (COMPULSORY) string value. User for the Couchbase instance.
+# couchbase_user:
+
+
+# (COMPULSORY) string value. Password for the Couchbase instance.
+# If you do not have a password make this an empty string.
+# couchbase_password:
+
+
+# (OPTIONAL | Default: "supertokens") string value. The bucket name to store SuperTokens related data.
+# couchbase_bucket_name:
+
+
+# (OPTIONAL | Default: "") string value. A prefix to add to all collections names managed by SuperTokens. An "_" will be
+# added between this prefix and the actual collection name if the prefix is defined
+# couchbase_collection_names_prefix:
+
+
+# (OPTIONAL | Default: "key_value") string value. Specify the name of the collection that will store secret keys
+# and app info necessary for the functioning sessions.
+# couchbase_key_value_collection_name:
+
+
+# (OPTIONAL | Default: "session_info") string value. Specify the name of the collection that will store the
+# session info for users.
+# couchbase_session_info_collection_name:

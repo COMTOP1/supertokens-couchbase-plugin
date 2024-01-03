@@ -1,0 +1,445 @@
+/*
+ *    Copyright (c) 2020, VRAI Labs and/or its affiliates. All rights reserved.
+ *
+ *    This software is licensed under the Apache License, Version 2.0 (the
+ *    "License") as published by the Apache Software Foundation.
+ *
+ *    You may not use this file except in compliance with the License. You may
+ *    obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ *    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ *    License for the specific language governing permissions and limitations
+ *    under the License.
+ *
+ */
+
+package io.supertokens.storage.couchbase;
+
+import ch.qos.logback.classic.Logger;
+import com.couchbase.client.core.error.CouchbaseException;
+import com.google.gson.JsonObject;
+import io.supertokens.pluginInterface.*;
+import io.supertokens.pluginInterface.exceptions.DbInitException;
+import io.supertokens.pluginInterface.exceptions.InvalidConfigException;
+import io.supertokens.pluginInterface.exceptions.StorageQueryException;
+import io.supertokens.pluginInterface.jwt.JWTSigningKeyInfo;
+import io.supertokens.pluginInterface.jwt.exceptions.DuplicateKeyIdException;
+import io.supertokens.pluginInterface.jwt.nosqlstorage.JWTRecipeNoSQLStorage_1;
+import io.supertokens.pluginInterface.multitenancy.AppIdentifier;
+import io.supertokens.pluginInterface.multitenancy.TenantIdentifier;
+import io.supertokens.pluginInterface.session.SessionInfo;
+import io.supertokens.pluginInterface.session.noSqlStorage.SessionInfoWithLastUpdated;
+import io.supertokens.pluginInterface.session.noSqlStorage.SessionNoSQLStorage_1;
+import io.supertokens.storage.couchbase.config.Config;
+import io.supertokens.storage.couchbase.config.CouchbaseConfig;
+import io.supertokens.storage.couchbase.output.Logging;
+import io.supertokens.storage.couchbase.queries.JWTSigningQueries;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.Set;
+
+public class Start implements SessionNoSQLStorage_1, JWTRecipeNoSQLStorage_1 {
+
+    private static final Object appenderLock = new Object();
+    public static boolean silent = false;
+    private ResourceDistributor resourceDistributor = new ResourceDistributor();
+    private String processId;
+    private CouchbaseLoggingAppender appender = new CouchbaseLoggingAppender(this);
+    private static final String APP_ID_KEY_NAME = "app_id";
+    private static final String ACCESS_TOKEN_SIGNING_KEY_LIST_NAME = "access_token_signing_key_list";
+    private static final String ACCESS_TOKEN_SIGNING_KEY_NAME = "access_token_signing_key";
+    private static final String REFRESH_TOKEN_KEY_NAME = "refresh_token_key";
+    public static boolean isTesting = false;
+    boolean enabled = true;
+    Thread mainThread = Thread.currentThread();
+    private Thread shutdownHook;
+
+    @Override
+    public void deleteAllInformation() throws StorageQueryException {
+        try {
+            initStorage(false);
+            enabled = true;
+            Queries.deleteAllCollections(this);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        } catch (DbInitException e) {
+            // ignore
+        } finally {
+            stopLogging();
+        }
+    }
+
+    @Override
+    public void close() {
+        ConnectionPool.close(this);
+    }
+
+    @Override
+    public void setStorageLayerEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    @Override
+    public SessionInfo getSession(TenantIdentifier tenantIdentifier, String sessionHandle) throws StorageQueryException {
+        try {
+            return Queries.getSession(this, sessionHandle);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public int updateSession(TenantIdentifier tenantIdentifier, String sessionHandle, JsonObject sessionData, JsonObject jwtPayload)
+            throws StorageQueryException {
+        try {
+            return Queries.updateSession(this, sessionHandle, sessionData, jwtPayload);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public void deleteAllExpiredSessions() throws StorageQueryException {
+        try {
+            Queries.deleteAllExpiredSessions(this);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public String[] getAllNonExpiredSessionHandlesForUser(TenantIdentifier tenantIdentifier, String userId) throws StorageQueryException {
+        try {
+            return Queries.getAllNonExpiredSessionHandlesForUser(this, userId);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public int deleteSession(TenantIdentifier tenantIdentifier, String[] sessionHandles) throws StorageQueryException {
+        try {
+            return Queries.deleteSession(this, sessionHandles);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public int getNumberOfSessions(TenantIdentifier tenantIdentifier) throws StorageQueryException {
+        try {
+            return Queries.getNumberOfSessions(this);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public boolean updateSessionInfo_Transaction(String sessionHandle, String refreshTokenHash2, long expiry,
+            String lastUpdatedSign) throws StorageQueryException {
+        try {
+            return Queries.updateSessionInfo_Transaction(this, sessionHandle, refreshTokenHash2, expiry,
+                    lastUpdatedSign);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public SessionInfoWithLastUpdated getSessionInfo_Transaction(String sessionHandle) throws StorageQueryException {
+        try {
+            return Queries.getSessionInfo_Transaction(this, sessionHandle);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public void createNewSession(TenantIdentifier tenantIdentifier, String sessionHandle, String userId, String refreshTokenHash2,
+            JsonObject userDataInDatabase, long expiry, JsonObject userDataInJWT, long createdAtTime, boolean useStaticKey)
+            throws StorageQueryException {
+        try {
+            Queries.createNewSession(this, sessionHandle, userId, refreshTokenHash2, userDataInDatabase, expiry,
+                    userDataInJWT, createdAtTime, useStaticKey);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public boolean deleteSessionsOfUser(TenantIdentifier tenantIdentifier, String userId) throws StorageQueryException {
+        return Queries.deleteSessionsOfUser(this, userId);
+    }
+
+    @Override
+    public void deleteSessionsOfUser(AppIdentifier appIdentifier, String userId) throws StorageQueryException {
+        Queries.deleteSessionsOfUser(this, userId);
+    }
+
+    @Override
+    public KeyValueInfoWithLastUpdated getRefreshTokenSigningKey_Transaction() throws StorageQueryException {
+        return getKeyValue_Transaction(REFRESH_TOKEN_KEY_NAME);
+    }
+
+    @Override
+    public boolean setRefreshTokenSigningKey_Transaction(KeyValueInfoWithLastUpdated info)
+            throws StorageQueryException {
+        return setKeyValue_Transaction(REFRESH_TOKEN_KEY_NAME, info);
+    }
+
+    @Override
+    public KeyValueInfoWithLastUpdated getLegacyAccessTokenSigningKey_Transaction() throws StorageQueryException {
+        return getKeyValue_Transaction(ACCESS_TOKEN_SIGNING_KEY_NAME);
+    }
+
+    @Override
+    public void removeLegacyAccessTokenSigningKey_Transaction() throws StorageQueryException {
+        Queries.deleteKeyValue(this, ACCESS_TOKEN_SIGNING_KEY_NAME);
+    }
+
+    @Override
+    public KeyValueInfo[] getAccessTokenSigningKeys_Transaction() throws StorageQueryException {
+        try {
+            List<KeyValueInfo> keyList = Queries.getArrayKeyValue_Transaction(this, ACCESS_TOKEN_SIGNING_KEY_LIST_NAME);
+            return keyList.toArray(new KeyValueInfo[keyList.size()]);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public boolean addAccessTokenSigningKey_Transaction(KeyValueInfo info, Long lastCreated)
+            throws StorageQueryException {
+        try {
+            return Queries.addArrayKeyValue_Transaction(this, ACCESS_TOKEN_SIGNING_KEY_LIST_NAME, info, lastCreated);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public void removeAccessTokenSigningKeysBefore(AppIdentifier appIdentifier, long time) throws StorageQueryException {
+        try {
+            Queries.removeArrayKeyValuesBefore(this, ACCESS_TOKEN_SIGNING_KEY_LIST_NAME, time);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    public ResourceDistributor getResourceDistributor() {
+        return resourceDistributor;
+    }
+
+    public String getProcessId() {
+        return this.processId;
+    }
+
+    @Override
+    public void constructor(String processId, boolean silent, boolean isTesting) {
+        this.processId = processId;
+        Start.silent = silent;
+        Start.isTesting = isTesting;
+    }
+
+    @Override
+    public STORAGE_TYPE getType() {
+        return STORAGE_TYPE.NOSQL_1;
+    }
+
+    @Override
+    public void loadConfig(JsonObject configJson, Set<LOG_LEVEL> logLevels, TenantIdentifier tenantIdentifier) throws
+            InvalidConfigException {
+        Config.loadConfig(this, configJson, logLevels, tenantIdentifier);
+    }
+
+    @Override
+    public void initFileLogging(String infoLogPath, String errorLogPath) {
+        Logging.initFileLogging(this, infoLogPath, errorLogPath);
+
+        /*
+         * NOTE: The log this produces is only accurate in production or development.
+         *
+         * For testing, it may happen that multiple processes are running at the same
+         * time which can lead to one of them being the winner and its start instance
+         * being attached to logger class. This would yield inaccurate processIds during
+         * logging.
+         *
+         * Finally, during testing, the winner's logger might be removed, in which case
+         * nothing will be handling logging and couchbase's logs would not be outputed
+         * anywhere.
+         */
+        synchronized (appenderLock) {
+            final Logger infoLog = (Logger) LoggerFactory.getLogger("org.couchbase.driver");
+            if (infoLog.getAppender(CouchbaseLoggingAppender.NAME) == null) {
+                infoLog.setAdditive(false);
+                infoLog.addAppender(appender);
+            }
+        }
+
+    }
+
+    @Override
+    public void stopLogging() {
+        Logging.stopLogging(this);
+
+        synchronized (appenderLock) {
+            final Logger infoLog = (Logger) LoggerFactory.getLogger("org.couchbase.driver");
+            if (infoLog.getAppender(CouchbaseLoggingAppender.NAME) != null) {
+                infoLog.detachAppender(CouchbaseLoggingAppender.NAME);
+            }
+        }
+    }
+
+    @Override
+    public void initStorage(boolean shouldWait) throws DbInitException {
+        ConnectionPool.initPool(this);
+    }
+
+    @Override
+    public void setKeyValue(TenantIdentifier tenantIdentifier, String key, KeyValueInfo info) throws StorageQueryException {
+        try {
+            Queries.setKeyValue(this, key, info);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public KeyValueInfo getKeyValue(TenantIdentifier tenantIdentifier, String key) throws StorageQueryException {
+        try {
+            return Queries.getKeyValue(this, key);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public boolean setKeyValue_Transaction(String key, KeyValueInfoWithLastUpdated info) throws StorageQueryException {
+        try {
+            return Queries.setKeyValue_Transaction(this, key, info);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public KeyValueInfoWithLastUpdated getKeyValue_Transaction(String key) throws StorageQueryException {
+        try {
+            return Queries.getKeyValue_Transaction(this, key);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    void removeShutdownHook() {
+        if (shutdownHook != null) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+                shutdownHook = null;
+            } catch (IllegalStateException ignored) {
+            }
+        }
+    }
+
+    void handleKillSignalForWhenItHappens() {
+        if (shutdownHook != null) {
+            return;
+        }
+        shutdownHook = new Thread(() -> {
+            mainThread.interrupt();
+        });
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+    }
+
+    @Override
+    public boolean canBeUsed(JsonObject configJson) {
+        return Config.canBeUsed(configJson);
+    }
+
+    @Override
+    public boolean isUserIdBeingUsedInNonAuthRecipe(AppIdentifier appIdentifier, String className, String userId) throws StorageQueryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void addInfoToNonAuthRecipesBasedOnUserId(TenantIdentifier tenantIdentifier, String className, String userId) throws StorageQueryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public List<JWTSigningKeyInfo> getJWTSigningKeys_Transaction() throws StorageQueryException {
+        try {
+            return JWTSigningQueries.getJWTSigningKeys_Transaction(this);
+        } catch (CouchbaseException e) {
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public boolean setJWTSigningKeyInfoIfNoKeyForAlgorithmExists_Transaction(JWTSigningKeyInfo keyInfo)
+            throws StorageQueryException, DuplicateKeyIdException {
+        try {
+            return JWTSigningQueries.setJWTSigningKeyInfoIfNoKeyForAlgorithmExists_Transaction(this, keyInfo);
+        } catch (CouchbaseException e) {
+
+            if (e.getMessage().contains("(DuplicateKey)")
+                    && e.getMessage().contains(Config.getConfig(this).getDatabaseName() + "."
+                            + Config.getConfig(this).getJWTSigningKeysCollection())) {
+                throw new DuplicateKeyIdException();
+            }
+
+            throw new StorageQueryException(e);
+        }
+    }
+
+    @Override
+    public String getUserPoolId() {
+        // we do not allow multiple couchbase dbs as there is no multitenancy support with this plugin
+        return "same-user-pool";
+    }
+
+    @Override
+    public String getConnectionPoolId() {
+        // we do not allow multiple couchbase dbs as there is no multitenancy support with this plugin
+        return "same-connection-pool";
+    }
+
+    @Override
+    public void assertThatConfigFromSameUserPoolIsNotConflicting(JsonObject otherConfig) throws InvalidConfigException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void modifyConfigToAddANewUserPoolForTesting(JsonObject config, int poolNumber) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public String[] getProtectedConfigsFromSuperTokensSaaSUsers() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Set<String> getValidFieldsInConfig() {
+        return CouchbaseConfig.getValidFields();
+    }
+
+    @Override
+    public void setLogLevels(Set<LOG_LEVEL> logLevels) {
+        Config.setLogLevels(this, logLevels);
+    }
+
+    @Override
+    public String[] getAllTablesInTheDatabase() throws StorageQueryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public String[] getAllTablesInTheDatabaseThatHasDataForAppId(String appId) throws StorageQueryException {
+        throw new UnsupportedOperationException();
+    }
+
+}
