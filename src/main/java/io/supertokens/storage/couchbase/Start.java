@@ -95,7 +95,11 @@ public class Start implements SessionNoSQLStorage_1, JWTRecipeNoSQLStorage_1 {
     public int updateSession(TenantIdentifier tenantIdentifier, String sessionHandle, JsonObject sessionData, JsonObject jwtPayload)
             throws StorageQueryException {
         try {
-            return Queries.updateSession(this, sessionHandle, sessionData, jwtPayload);
+            assert sessionData != null;
+            com.couchbase.client.java.json.JsonObject cbSessionData = com.couchbase.client.java.json.JsonObject.fromJson(sessionData.toString());
+            assert jwtPayload != null;
+            com.couchbase.client.java.json.JsonObject cbJWTPayload = com.couchbase.client.java.json.JsonObject.fromJson(jwtPayload.toString());
+            return Queries.updateSession(this, sessionHandle, cbSessionData, cbJWTPayload);
         } catch (CouchbaseException e) {
             throw new StorageQueryException(e);
         }
@@ -162,8 +166,12 @@ public class Start implements SessionNoSQLStorage_1, JWTRecipeNoSQLStorage_1 {
             JsonObject userDataInDatabase, long expiry, JsonObject userDataInJWT, long createdAtTime, boolean useStaticKey)
             throws StorageQueryException {
         try {
-            Queries.createNewSession(this, sessionHandle, userId, refreshTokenHash2, userDataInDatabase, expiry,
-                    userDataInJWT, createdAtTime, useStaticKey);
+            assert userDataInDatabase != null;
+            com.couchbase.client.java.json.JsonObject cbUserDataInDatabase = com.couchbase.client.java.json.JsonObject.fromJson(userDataInDatabase.toString());
+            assert userDataInJWT != null;
+            com.couchbase.client.java.json.JsonObject cbUserDataInJWT = com.couchbase.client.java.json.JsonObject.fromJson(userDataInJWT.toString());
+            Queries.createNewSession(this, sessionHandle, userId, refreshTokenHash2, cbUserDataInDatabase, expiry,
+                    cbUserDataInJWT, createdAtTime, useStaticKey);
         } catch (CouchbaseException e) {
             throw new StorageQueryException(e);
         }
@@ -386,7 +394,7 @@ public class Start implements SessionNoSQLStorage_1, JWTRecipeNoSQLStorage_1 {
         } catch (CouchbaseException e) {
 
             if (e.getMessage().contains("(DuplicateKey)")
-                    && e.getMessage().contains(Config.getConfig(this).getDatabaseName() + "."
+                    && e.getMessage().contains(Config.getConfig(this).getBucketName() + "."
                             + Config.getConfig(this).getJWTSigningKeysCollection())) {
                 throw new DuplicateKeyIdException();
             }

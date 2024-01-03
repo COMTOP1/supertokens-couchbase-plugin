@@ -27,6 +27,7 @@ import io.supertokens.pluginInterface.exceptions.InvalidConfigException;
 import java.net.URI;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -45,7 +46,7 @@ public class CouchbaseConfig {
     private String couchbase_password = null;
 
     @JsonProperty
-    private String couchbase_database_name = null;
+    private String couchbase_bucket_name = null;
 
     @JsonProperty
     private String couchbase_key_value_collection_name = null;
@@ -67,10 +68,6 @@ public class CouchbaseConfig {
         return validFields;
     }
 
-    public boolean useConnectionURIAsIs() {
-        return couchbase_database_name == null && couchbase_connection_uri != null;
-    }
-
     public String getConnectionScheme() {
         URI uri = URI.create(couchbase_connection_uri);
 
@@ -83,14 +80,14 @@ public class CouchbaseConfig {
         return "couchbase";
     }
 
-    public String getConnectionAttributes() {
-        URI uri = URI.create(couchbase_connection_uri);
-        String query = uri.getQuery();
-        if (query != null) {
-            return query;
-        }
-        return "";
-    }
+//    public String getConnectionAttributes() {
+//        URI uri = URI.create(couchbase_connection_uri);
+//        String query = uri.getQuery();
+//        if (query != null) {
+//            return query;
+//        }
+//        return "";
+//    }
 
     public String getHostName() {
         URI uri = URI.create(couchbase_connection_uri);
@@ -106,42 +103,19 @@ public class CouchbaseConfig {
     }
 
     public String getUser() {
-        URI uri = URI.create(couchbase_connection_uri);
-        String userInfo = uri.getUserInfo();
-        if (userInfo != null) {
-            String[] userInfoArray = userInfo.split(":");
-            if (userInfoArray.length > 0 && !userInfoArray[0].isEmpty()) {
-                return userInfoArray[0];
-            }
-        }
-        return null;
+        if (couchbase_user.isEmpty())
+            return "Administrator";
+        return couchbase_user;
     }
 
     public String getPassword() {
-        URI uri = URI.create(couchbase_connection_uri);
-        String userInfo = uri.getUserInfo();
-        if (userInfo != null) {
-            String[] userInfoArray = userInfo.split(":");
-            if (userInfoArray.length > 1 && !userInfoArray[1].isEmpty()) {
-                return userInfoArray[1];
-            }
-        }
-        return null;
+        if (couchbase_password.isEmpty())
+            return "password";
+        return couchbase_password;
     }
 
-    public String getDatabaseName() {
-        if (couchbase_database_name == null) {
-            URI uri = URI.create(couchbase_connection_uri);
-            String path = uri.getPath();
-            if (path != null && !path.isEmpty() && !path.equals("/")) {
-                if (path.startsWith("/")) {
-                    return path.substring(1);
-                }
-                return path;
-            }
-            return "supertokens";
-        }
-        return couchbase_database_name;
+    public String getBucketName() {
+        return Objects.requireNonNullElse(couchbase_bucket_name, "supertokens");
     }
 
     public String getConnectionURI() {
